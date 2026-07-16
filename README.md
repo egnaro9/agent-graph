@@ -82,14 +82,16 @@ The built-in `search` tool is a five-entry dict — fine for testing the graph, 
 
 ```python
 from agentgraph.graph import run
-from agentgraph.rag import rag_policy, rag_tools
+from agentgraph.rag import rag_tools
 
-state = run("Which planet is the hottest?", policy=rag_policy(), tools_registry=rag_tools())
+state = run("Which planet is the hottest?", tools_registry=rag_tools())
 ```
+
+That's the whole swap — no policy change, no flag. The planner adapts because **each tool owns its own trigger**: a lookup table only applies to keys it knows, a retriever applies to any question.
 
 Two things this buys beyond a nicer demo. **The agent's answers become gradeable** — retrieval now yields contexts, and grounding can only be measured against the context that was actually retrieved. And **real failure modes appear**: the toy tool either finds the fact or says "no results", while a real retriever confidently returns the *wrong* chunk — which is precisely what faithfulness scoring exists to catch.
 
-It also exposed a real design flaw: the planner's "should I search?" trigger was hard-coded to the toy KB's keys, so with a real corpus it never fired. `rag_policy()` retrieves for any question instead — the trigger belongs with the retriever, not a lookup table.
+It also exposed a real design flaw worth describing, because the first fix was the wrong one. `policy.py` imported the search tool's private `_KB` to decide whether searching was worthwhile — so a real corpus produced an agent that **silently never searched**. The quick fix was an `always_search` flag; the actual fix was to notice the coupling: a tool knows two things, *how to run* and *when it applies*, and the planner had been holding the second half for it. Now tools implement `plan(query)`, `MockPolicy` just sequences what they return, and the flag is gone. A regression test asserts `policy.py` never mentions `_KB` again.
 
 ## Composing with llm-gateway
 

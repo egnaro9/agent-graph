@@ -1,31 +1,22 @@
 """The "brain" that decides the next action — a swappable policy.
 
-``MockPolicy`` is a deterministic, rule-based planner: it derives an ordered
-plan of tool calls from the query, then on each turn returns the next
-un-executed action (given the observations gathered so far) or a final answer.
-That determinism is what lets the whole agent be unit-tested.
+``MockPolicy`` is a deterministic, rule-based planner, and it deliberately
+knows nothing about what any individual tool does: it asks the tool registry
+what a query implies and sequences the answers.
+
+That separation is load-bearing. The planner used to reach into the search
+tool's private knowledge base to decide whether searching was worth it — so
+swapping in a real retriever produced an agent that silently never searched.
+A tool's trigger belongs to the tool; the planner only orders the result.
 
 ``LLMPolicy`` (optional) delegates the same decision to a real model via
 function-calling; the graph is identical either way.
 """
 from __future__ import annotations
 
-import re
-from typing import Any, Dict, List, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
-from .tools import _KB
-
-# "X% of Y" -> compute a percentage
-_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)")
-# an explicit arithmetic expression: numbers joined by + - * /
-_EXPR_RE = re.compile(r"\d+(?:\.\d+)?(?:\s*[-+*/]\s*\d+(?:\.\d+)?)+")
-
-_QUESTION_WORDS = ("what", "which", "who", "where", "when", "why", "how", "is ", "are ", "does ", "did ")
-
-
-def _looks_like_a_question(query: str) -> bool:
-    q = query.lower().strip()
-    return q.endswith("?") or q.startswith(_QUESTION_WORDS)
+from .tools import Tool, plan_tools
 
 
 class Policy(Protocol):
@@ -34,47 +25,24 @@ class Policy(Protocol):
 
 
 class MockPolicy:
-    """Rule-based planner.
+    """Deterministic planner: ask the tools, sequence their answers.
 
-    :param always_search: by default, a ``search`` is planned only when the
-        query mentions a topic the built-in toy knowledge base knows about —
-        which is fine for a lookup table and wrong for a real retriever, where
-        *any* question is worth retrieving for. Set this when ``search`` is
-        backed by an actual corpus (see :mod:`agentgraph.rag`).
+    :param tools: the registry to plan against. Defaults to the built-ins.
+        Hand it :func:`agentgraph.rag.rag_tools` and the plan changes on its
+        own — because the retriever's trigger differs from the lookup table's.
+        No flag, no branch here.
     """
 
-    def __init__(self, always_search: bool = False) -> None:
-        self.always_search = always_search
+    def __init__(self, tools: Optional[Dict[str, Tool]] = None) -> None:
+        self.tools = tools
 
     def plan(self, query: str) -> List[Dict[str, str]]:
-        """Ordered tool calls implied by the query (deterministic)."""
-        actions: List[Dict[str, str]] = []
-        ql = query.lower()
-        for m in _PCT_RE.finditer(ql):
-            pct, whole = m.group(1), m.group(2)
-            actions.append(
-                {"tool": "calculator", "args": f"{pct}/100*{whole}",
-                 "reason": f"compute {pct}% of {whole}"}
-            )
-        for m in _EXPR_RE.finditer(query):
-            expr = m.group(0).strip()
-            actions.append(
-                {"tool": "calculator", "args": expr, "reason": f"evaluate {expr}"}
-            )
-        matched = False
-        for key in _KB:
-            if all(word in ql for word in key.split()):
-                actions.append(
-                    {"tool": "search", "args": query, "reason": f"look up '{key}'"}
-                )
-                matched = True
-                break
-        # With a real retriever there's no lookup table to consult — retrieve
-        # for any question and let the eval harness judge whether the answer
-        # the corpus supported was actually good.
-        if not matched and self.always_search and _looks_like_a_question(query):
-            actions.append({"tool": "search", "args": query, "reason": "retrieve from the corpus"})
-        return actions
+        """Ordered tool calls implied by the query (deterministic).
+
+        The planner contributes sequencing, not knowledge — every rule about
+        *when* a tool applies lives with that tool.
+        """
+        return plan_tools(query, self.tools)
 
     def decide(self, query: str, observations: List[Dict[str, Any]]) -> Dict[str, Any]:
         plan = self.plan(query)

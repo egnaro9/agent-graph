@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import ast
 import operator as op
-from typing import Callable, Dict
+import re
+from typing import Callable, Dict, List, Protocol
 
 _BINOPS = {
     ast.Add: op.add,
@@ -74,20 +75,113 @@ def wordcount(text: str) -> str:
     return str(len(text.split()))
 
 
-TOOLS: Dict[str, Callable[[str], str]] = {
-    "calculator": calculator,
-    "search": search,
-    "wordcount": wordcount,
+# ── tools as objects: each one owns its own trigger ───────────────────────────
+#
+# A tool knows two things: how to run, and *when it applies*. Keeping the
+# second half here — rather than in the planner — is what stops the policy from
+# having to know that `search` happens to be backed by a five-entry dict. Swap
+# in a real retriever and the trigger swaps with it, because it belongs to the
+# tool. (It didn't always: the planner used to import this module's private
+# _KB to decide whether to search, so a real corpus never triggered one.)
+
+
+class Tool(Protocol):
+    name: str
+
+    def __call__(self, arg: str) -> str:
+        """Run the tool."""
+
+    def plan(self, query: str) -> List[Dict[str, str]]:
+        """The calls this query implies for *this* tool. Empty = not applicable."""
+
+
+# "X% of Y"
+_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)")
+# an explicit arithmetic expression: numbers joined by + - * /
+_EXPR_RE = re.compile(r"\d+(?:\.\d+)?(?:\s*[-+*/]\s*\d+(?:\.\d+)?)+")
+
+_QUESTION_WORDS = ("what", "which", "who", "where", "when", "why", "how",
+                   "is ", "are ", "does ", "did ")
+
+
+def looks_like_a_question(query: str) -> bool:
+    q = query.lower().strip()
+    return q.endswith("?") or q.startswith(_QUESTION_WORDS)
+
+
+class CalculatorTool:
+    """Arithmetic. Applies when the query contains something to compute."""
+
+    name = "calculator"
+
+    def __call__(self, arg: str) -> str:
+        return calculator(arg)
+
+    def plan(self, query: str) -> List[Dict[str, str]]:
+        out: List[Dict[str, str]] = []
+        for m in _PCT_RE.finditer(query.lower()):
+            pct, whole = m.group(1), m.group(2)
+            out.append({"tool": self.name, "args": f"{pct}/100*{whole}",
+                        "reason": f"compute {pct}% of {whole}"})
+        for m in _EXPR_RE.finditer(query):
+            expr = m.group(0).strip()
+            out.append({"tool": self.name, "args": expr, "reason": f"evaluate {expr}"})
+        return out
+
+
+class KbSearchTool:
+    """Lookup over a small fixed knowledge base.
+
+    Applies only when the query mentions a topic it actually knows — which is
+    the honest trigger for a lookup table, and exactly the wrong one for a real
+    retriever. See :class:`agentgraph.rag.RagSearch`, which applies to any
+    question because it has a corpus to search rather than keys to match.
+    """
+
+    name = "search"
+
+    def __call__(self, arg: str) -> str:
+        return search(arg)
+
+    def plan(self, query: str) -> List[Dict[str, str]]:
+        ql = query.lower()
+        for key in _KB:
+            if all(word in ql for word in key.split()):
+                return [{"tool": self.name, "args": query, "reason": f"look up '{key}'"}]
+        return []
+
+
+class WordCountTool:
+    name = "wordcount"
+
+    def __call__(self, arg: str) -> str:
+        return wordcount(arg)
+
+    def plan(self, query: str) -> List[Dict[str, str]]:
+        return []          # only ever called explicitly
+
+
+# Registry order is plan order: compute before looking things up.
+TOOLS: Dict[str, Tool] = {
+    "calculator": CalculatorTool(),
+    "search": KbSearchTool(),
+    "wordcount": WordCountTool(),
 }
 
 
-def run_tool(name: str, arg: str, tools: Dict[str, Callable[[str], str]] | None = None) -> str:
-    """Execute a tool from ``tools`` (default: the built-in registry).
+def plan_tools(query: str, tools: Dict[str, Tool] | None = None) -> List[Dict[str, str]]:
+    """Ask every tool in the registry what this query implies for it."""
+    registry = TOOLS if tools is None else tools
+    out: List[Dict[str, str]] = []
+    for tool in registry.values():
+        planner = getattr(tool, "plan", None)
+        if planner is not None:
+            out.extend(planner(query))
+    return out
 
-    The registry is injectable so a caller can swap an implementation without
-    touching the graph — e.g. backing ``search`` with a real retriever instead
-    of the toy knowledge base. See :mod:`agentgraph.rag`.
-    """
+
+def run_tool(name: str, arg: str, tools: Dict[str, Tool] | None = None) -> str:
+    """Execute a tool from ``tools`` (default: the built-in registry)."""
     registry = TOOLS if tools is None else tools
     if name not in registry:
         raise ToolError(f"unknown tool: {name!r}")

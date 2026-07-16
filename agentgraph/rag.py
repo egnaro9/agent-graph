@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional
 
-from .tools import TOOLS, calculator, wordcount
+from .tools import TOOLS, looks_like_a_question
 
 
 class RagSearch:
@@ -34,6 +34,8 @@ class RagSearch:
     Keeps the last retrieval's contexts and chunk ids, because that's what an
     eval harness needs afterwards to judge whether the answer was grounded.
     """
+
+    name = "search"
 
     def __init__(self, docs: Optional[Dict[str, str]] = None, k: int = 3) -> None:
         try:
@@ -49,6 +51,18 @@ class RagSearch:
         self.last_contexts: List[str] = []
         self.last_retrieved: List[str] = []
 
+    def plan(self, query: str) -> List[Dict[str, str]]:
+        """Applies to any question.
+
+        The lookup-table tool can only answer for keys it knows, so that's its
+        trigger. A retriever has a corpus — every question is worth retrieving
+        for, and whether the corpus actually supported the answer is a question
+        for the eval harness, not the planner.
+        """
+        if looks_like_a_question(query):
+            return [{"tool": "search", "args": query, "reason": "retrieve from the corpus"}]
+        return []
+
     def __call__(self, query: str) -> str:
         records = self.pipeline.retrieve(query, k=self.k)
         self.last_contexts = [r.text for r in records]
@@ -61,22 +75,25 @@ class RagSearch:
 
 
 def rag_policy():
-    """The planner to pair with :func:`rag_tools`.
+    """Deprecated — no longer needed.
 
-    The default planner only searches when the query hits the toy knowledge
-    base's keys — a trigger that makes no sense once ``search`` is a real
-    retriever. This one retrieves for any question.
+    Kept as a thin alias: the retriever now owns its own trigger, so
+    ``MockPolicy(tools=rag_tools())`` plans correctly with no special policy.
     """
     from .policy import MockPolicy
 
-    return MockPolicy(always_search=True)
+    return MockPolicy(tools=rag_tools())
 
 
 def rag_tools(docs: Optional[Dict[str, str]] = None, k: int = 3) -> Dict[str, Callable[[str], str]]:
     """The standard tool registry with ``search`` backed by real retrieval.
 
+    The returned registry is all you need — pass it as ``tools_registry`` and
+    the planner adapts on its own, because the trigger travels with the tool.
+
     >>> from agentgraph.graph import run
     >>> from agentgraph.rag import rag_tools
-    >>> state = run("Which planet is the hottest?", tools_registry=rag_tools())
+    >>> tools = rag_tools()
+    >>> state = run("Which planet is the hottest?", tools_registry=tools)
     """
     return {**TOOLS, "search": RagSearch(docs=docs, k=k)}

@@ -1,10 +1,11 @@
+import pathlib
 """The agent's search tool backed by rag-eval-lab's retriever (arrow 1 of the stack)."""
 import pytest
 
 ragevallab = pytest.importorskip("ragevallab", reason="optional rag extra")
 
 from agentgraph.graph import run
-from agentgraph.rag import RagSearch, rag_policy, rag_tools
+from agentgraph.rag import RagSearch, rag_tools
 from agentgraph.tools import run_tool
 
 
@@ -24,7 +25,7 @@ def test_registry_swaps_only_search():
 
 
 def test_graph_runs_with_the_real_retriever():
-    state = run("Who wrote Hamlet?", policy=rag_policy(), tools_registry=rag_tools())
+    state = run("Who wrote Hamlet?", tools_registry=rag_tools())
     # The planet corpus has nothing about Hamlet — a REAL retriever returns its
     # closest chunk anyway rather than admitting defeat. That's the honest
     # failure mode the toy tool hid, and exactly what faithfulness catches.
@@ -33,7 +34,7 @@ def test_graph_runs_with_the_real_retriever():
 
 
 def test_real_retrieval_answers_an_in_corpus_question():
-    state = run("Which planet is the hottest?", policy=rag_policy(), tools_registry=rag_tools())
+    state = run("Which planet is the hottest?", tools_registry=rag_tools())
     assert "Venus" in state["answer"]
 
 
@@ -47,12 +48,32 @@ def test_run_tool_accepts_an_injected_registry():
     assert "Venus" in run_tool("search", "hottest planet", rag_tools())
 
 
-def test_default_planner_still_ignores_non_questions():
+def test_the_tool_owns_its_trigger_not_the_planner():
     from agentgraph.policy import MockPolicy
-    assert MockPolicy(always_search=True).plan("hello there") == []
+    q = "Which planet is the hottest?"      # no built-in KB key matches this
+    # Lookup table: doesn't know the topic, so doesn't apply.
+    assert MockPolicy().plan(q) == []
+    # Real retriever: applies to any question. Same planner, no flag — the
+    # difference travels with the tool.
+    assert MockPolicy(tools=rag_tools()).plan(q)[0]["tool"] == "search"
 
 
-def test_always_search_does_not_change_the_default_planner():
+def test_retriever_still_ignores_non_questions():
     from agentgraph.policy import MockPolicy
-    assert MockPolicy().plan("Which planet is the hottest?") == []   # no KB key matches
-    assert MockPolicy(always_search=True).plan("Which planet is the hottest?")[0]["tool"] == "search"
+    assert MockPolicy(tools=rag_tools()).plan("hello there") == []
+
+
+def test_planner_does_not_import_tool_internals():
+    # The regression that started this: the policy used to reach into the
+    # search tool's private _KB, which is why a real corpus never triggered.
+    import agentgraph.policy as policy_mod
+    src = pathlib.Path(policy_mod.__file__).read_text()
+    assert "_KB" not in src
+    assert "always_search" not in src
+
+
+def test_default_policy_plans_against_the_registry_it_executes_with():
+    # run() must not plan with the built-ins while executing with rag tools.
+    state = run("Which planet is the hottest?", tools_registry=rag_tools())
+    assert [s["tool"] for s in state["steps"] if s["type"] == "action"] == ["search"]
+    assert "Venus" in state["answer"]

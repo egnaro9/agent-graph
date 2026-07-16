@@ -21,7 +21,9 @@ DEFAULT_MAX_STEPS = 6
 
 def build_graph(policy: Optional[Policy] = None, max_steps: int = DEFAULT_MAX_STEPS,
                 tools_registry: Optional[Dict[str, Any]] = None):
-    policy = policy or MockPolicy()
+    # Plan against the registry we'll execute with — otherwise a swapped-in
+    # tool (a real retriever, say) would never be planned for, only run.
+    policy = policy or MockPolicy(tools=tools_registry)
 
     def agent(state: AgentState) -> Dict[str, Any]:
         step = state.get("step_count", 0)
