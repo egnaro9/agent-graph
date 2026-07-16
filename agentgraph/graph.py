@@ -19,7 +19,8 @@ from .tools import ToolError, run_tool
 DEFAULT_MAX_STEPS = 6
 
 
-def build_graph(policy: Optional[Policy] = None, max_steps: int = DEFAULT_MAX_STEPS):
+def build_graph(policy: Optional[Policy] = None, max_steps: int = DEFAULT_MAX_STEPS,
+                tools_registry: Optional[Dict[str, Any]] = None):
     policy = policy or MockPolicy()
 
     def agent(state: AgentState) -> Dict[str, Any]:
@@ -53,7 +54,7 @@ def build_graph(policy: Optional[Policy] = None, max_steps: int = DEFAULT_MAX_ST
         action = state["next_action"]
         assert action is not None
         try:
-            result = run_tool(action["tool"], action["args"])
+            result = run_tool(action["tool"], action["args"], tools_registry)
             obs = {"tool": action["tool"], "args": action["args"], "result": result}
         except ToolError as exc:
             obs = {
@@ -80,9 +81,10 @@ def build_graph(policy: Optional[Policy] = None, max_steps: int = DEFAULT_MAX_ST
     return g.compile()
 
 
-def run(query: str, max_steps: int = DEFAULT_MAX_STEPS, policy: Optional[Policy] = None) -> Dict[str, Any]:
+def run(query: str, max_steps: int = DEFAULT_MAX_STEPS, policy: Optional[Policy] = None,
+        tools_registry: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Run the agent to completion and return the final state (answer + trace)."""
-    app = build_graph(policy=policy, max_steps=max_steps)
+    app = build_graph(policy=policy, max_steps=max_steps, tools_registry=tools_registry)
     return app.invoke(
         {
             "query": query,

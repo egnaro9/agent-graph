@@ -20,6 +20,7 @@ dependencies = ["langgraph>=0.2"]
 
 [project.optional-dependencies]
 openai = ["openai>=1.0"]
+rag = ["ragevallab>=0.1"]      # back `search` with real retrieval (agentgraph.rag)
 dev = ["pytest>=7"]
 
 [project.scripts]

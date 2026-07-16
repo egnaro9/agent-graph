@@ -81,7 +81,14 @@ TOOLS: Dict[str, Callable[[str], str]] = {
 }
 
 
-def run_tool(name: str, arg: str) -> str:
-    if name not in TOOLS:
+def run_tool(name: str, arg: str, tools: Dict[str, Callable[[str], str]] | None = None) -> str:
+    """Execute a tool from ``tools`` (default: the built-in registry).
+
+    The registry is injectable so a caller can swap an implementation without
+    touching the graph — e.g. backing ``search`` with a real retriever instead
+    of the toy knowledge base. See :mod:`agentgraph.rag`.
+    """
+    registry = TOOLS if tools is None else tools
+    if name not in registry:
         raise ToolError(f"unknown tool: {name!r}")
-    return TOOLS[name](arg)
+    return registry[name](arg)

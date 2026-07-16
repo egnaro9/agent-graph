@@ -76,6 +76,21 @@ build_graph(policy=AlwaysActsPolicy(), max_steps=3)   # the agent node forces a 
 ```
 See [`test_graph.py::test_max_steps_guard_prevents_infinite_loop`](tests/test_graph.py).
 
+## Composing with rag-eval-lab
+
+The built-in `search` tool is a five-entry dict — fine for testing the graph, useless as retrieval. [`agentgraph.rag`](agentgraph/rag.py) swaps it for [rag-eval-lab](https://github.com/egnaro9/rag-eval-lab)'s pipeline, which is what a RAG-backed agent *is*:
+
+```python
+from agentgraph.graph import run
+from agentgraph.rag import rag_policy, rag_tools
+
+state = run("Which planet is the hottest?", policy=rag_policy(), tools_registry=rag_tools())
+```
+
+Two things this buys beyond a nicer demo. **The agent's answers become gradeable** — retrieval now yields contexts, and grounding can only be measured against the context that was actually retrieved. And **real failure modes appear**: the toy tool either finds the fact or says "no results", while a real retriever confidently returns the *wrong* chunk — which is precisely what faithfulness scoring exists to catch.
+
+It also exposed a real design flaw: the planner's "should I search?" trigger was hard-coded to the toy KB's keys, so with a real corpus it never fired. `rag_policy()` retrieves for any question instead — the trigger belongs with the retriever, not a lookup table.
+
 ## Composing with llm-gateway
 
 An agent is a *chatty* LLM client — one call per turn, and multi-step runs repeat near-identical prompts constantly. [`GatewayPolicy`](agentgraph/gateway.py) points those calls at [llm-gateway](https://github.com/egnaro9/llm-gateway), which then authenticates, caches, retries and cost-accounts every one of them without the agent knowing:

@@ -20,6 +20,13 @@ _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%\s*of\s*(\d+(?:\.\d+)?)")
 # an explicit arithmetic expression: numbers joined by + - * /
 _EXPR_RE = re.compile(r"\d+(?:\.\d+)?(?:\s*[-+*/]\s*\d+(?:\.\d+)?)+")
 
+_QUESTION_WORDS = ("what", "which", "who", "where", "when", "why", "how", "is ", "are ", "does ", "did ")
+
+
+def _looks_like_a_question(query: str) -> bool:
+    q = query.lower().strip()
+    return q.endswith("?") or q.startswith(_QUESTION_WORDS)
+
 
 class Policy(Protocol):
     def decide(self, query: str, observations: List[Dict[str, Any]]) -> Dict[str, Any]: ...
@@ -27,6 +34,18 @@ class Policy(Protocol):
 
 
 class MockPolicy:
+    """Rule-based planner.
+
+    :param always_search: by default, a ``search`` is planned only when the
+        query mentions a topic the built-in toy knowledge base knows about —
+        which is fine for a lookup table and wrong for a real retriever, where
+        *any* question is worth retrieving for. Set this when ``search`` is
+        backed by an actual corpus (see :mod:`agentgraph.rag`).
+    """
+
+    def __init__(self, always_search: bool = False) -> None:
+        self.always_search = always_search
+
     def plan(self, query: str) -> List[Dict[str, str]]:
         """Ordered tool calls implied by the query (deterministic)."""
         actions: List[Dict[str, str]] = []
@@ -42,12 +61,19 @@ class MockPolicy:
             actions.append(
                 {"tool": "calculator", "args": expr, "reason": f"evaluate {expr}"}
             )
+        matched = False
         for key in _KB:
             if all(word in ql for word in key.split()):
                 actions.append(
                     {"tool": "search", "args": query, "reason": f"look up '{key}'"}
                 )
+                matched = True
                 break
+        # With a real retriever there's no lookup table to consult — retrieve
+        # for any question and let the eval harness judge whether the answer
+        # the corpus supported was actually good.
+        if not matched and self.always_search and _looks_like_a_question(query):
+            actions.append({"tool": "search", "args": query, "reason": "retrieve from the corpus"})
         return actions
 
     def decide(self, query: str, observations: List[Dict[str, Any]]) -> Dict[str, Any]:
