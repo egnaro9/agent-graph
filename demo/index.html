@@ -131,6 +131,26 @@
     <div class="note">The other guardrail is a <b>step budget</b>: the agent node forces a finish once it hits <code>max_steps</code>, so a policy that never decides to stop still terminates. Both are unit-tested — a broken policy that loops forever is an actual test case.</div>
   </section>
 
+  <section>
+    <div class="label">// Part 3 — they compose</div>
+    <h2>The agent calls the gateway</h2>
+    <p class="intro">An agent is a <em>chatty</em> LLM client: one model call per turn, and multi-step runs repeat near-identical prompts constantly. So this agent points its LLM calls at <a href="https://egnaro9.github.io/llm-gateway/">llm-gateway</a> — the companion project — which then authenticates, caches, retries and cost-accounts every one of them, without the agent knowing any of it happened.</p>
+    <p class="intro"><strong>Both projects are running in this one tab.</strong> This page installs the gateway's own published wheel — the same artifact its CI ships — so the arrow below isn't a diagram, it's a function call. <b>Ask the same question twice</b> and watch the gateway serve the agent from cache.</p>
+
+    <div class="row" style="margin-top:18px">
+      <input type="text" id="gwq" value="What is 15% of 240 and who wrote Hamlet?" aria-label="Ask via the gateway">
+      <button id="askGw" class="primary" disabled>Ask via gateway</button>
+    </div>
+    <div>
+      <button class="ghost" data-gwq="What is 12 * 8?" disabled>math</button>
+      <button class="ghost" data-gwq="Who wrote Hamlet?" disabled>search</button>
+      <button class="ghost" data-gwq="What is 15% of 240 and who wrote Hamlet?" disabled>ask again → cache hit</button>
+    </div>
+    <div id="gwOut"></div>
+
+    <div class="note">Honest about the split: the <b>tool selection stays deterministic</b> (the rule-based planner, so the graph stays reproducible and testable) — the gateway governs the <b>compose</b> call, where a model turns tool results into an answer. Swap in <code>LLMPolicy</code> and the model picks tools too, through the same gateway. And if the gateway is unreachable, the policy degrades to composing locally rather than throwing away work the tools already did — that's a tested path.</div>
+  </section>
+
   <footer>
     <p>Running <a href="https://github.com/egnaro9/agent-graph">agent-graph</a> on real <a href="https://langchain-ai.github.io/langgraph/">LangGraph</a> via <a href="https://pyodide.org">Pyodide</a>. The wheel is built from <code>main</code> by CI.</p>
     <p><b>One honest caveat:</b> LangGraph pulls <code>ormsgpack</code> and <code>websockets</code>, which have no WebAssembly builds. This agent uses neither — no checkpointer, no remote client — so they're stubbed here. The stubs raise <code>NotImplementedError</code> instead of faking behavior, so an unused path can't silently pretend to work. The graph, the tools and the guardrails are all genuinely running.</p>

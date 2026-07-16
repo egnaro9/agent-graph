@@ -76,6 +76,21 @@ build_graph(policy=AlwaysActsPolicy(), max_steps=3)   # the agent node forces a 
 ```
 See [`test_graph.py::test_max_steps_guard_prevents_infinite_loop`](tests/test_graph.py).
 
+## Composing with llm-gateway
+
+An agent is a *chatty* LLM client — one call per turn, and multi-step runs repeat near-identical prompts constantly. [`GatewayPolicy`](agentgraph/gateway.py) points those calls at [llm-gateway](https://github.com/egnaro9/llm-gateway), which then authenticates, caches, retries and cost-accounts every one of them without the agent knowing:
+
+```python
+from agentgraph.gateway import GatewayPolicy
+from agentgraph.graph import build_graph
+
+app = build_graph(policy=GatewayPolicy(base_url="http://localhost:8000", model="mock-1"))
+```
+
+Ask the same question twice and the second run's LLM call is a **cache hit** — the provider is never touched. [Try it in the browser](https://egnaro9.github.io/agent-graph/), where both projects run in one tab.
+
+Two things stay honest here: **tool selection remains deterministic** (the rule-based planner, so the graph stays reproducible) — the gateway governs the *compose* call, where a model turns tool results into prose. And if the gateway is unreachable, the policy **degrades to composing locally** rather than throwing away work the tools already did. Both are tested.
+
 ## Swapping in a real model
 
 The graph doesn't change — only the policy does:

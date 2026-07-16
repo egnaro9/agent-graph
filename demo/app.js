@@ -28,6 +28,15 @@ async function boot() {
     setStatus("Installing the agentgraph wheel…");
     await micropip.install(window.WHEEL_URL || "./agentgraph-0.1.0-py3-none-any.whl");
 
+    // The companion project, fetched from ITS OWN published Pages build — the
+    // same wheel its CI ships. Same origin, so the agent can genuinely call it.
+    setStatus("Installing llm-gateway (the companion project)…");
+    await micropip.install(["fastapi"]);
+    await micropip.install.callKwargs(
+      window.GATEWAY_WHEEL_URL || "https://egnaro9.github.io/llm-gateway/llmgateway-0.1.0-py3-none-any.whl",
+      { deps: false }
+    );
+
     setStatus("Compiling the graph…");
     await py.runPythonAsync(`
 import sys, types, json
@@ -87,6 +96,71 @@ def calc_json(expr):
         return json.dumps({"ok": True, "result": calculator(expr)})
     except ToolError as e:
         return json.dumps({"ok": False, "error": str(e)})
+
+# ── the composition: this agent's LLM calls, routed through llm-gateway ───────
+#
+# Both projects are running in this one tab, so the agent can actually call the
+# gateway rather than us drawing an arrow between two boxes. A browser can't
+# listen on a socket, so the transport hands each request straight to the
+# gateway's ASGI app — the same object uvicorn would serve.
+import anyio.to_thread
+async def _run_sync_inline(func, *args, **kwargs):
+    return func(*args)
+anyio.to_thread.run_sync = _run_sync_inline   # WASM has no threads
+
+from llmgateway.app import Config as GwConfig, create_app as create_gateway
+from agentgraph.gateway import GatewayPolicy
+
+GATEWAY = create_gateway(GwConfig(api_keys=frozenset({"dev-key"}), rate_capacity=40))
+
+async def _asgi(method, path, body):
+    """Await the gateway's real ASGI app in-process."""
+    payload = json.dumps(body).encode() if body else b""
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": method, "scheme": "http", "path": path, "raw_path": path.encode(),
+        "query_string": b"", "root_path": "",
+        "headers": [(b"content-type", b"application/json"), (b"authorization", b"Bearer dev-key")],
+        "client": ("127.0.0.1", 0), "server": ("localhost", 80),
+    }
+    sent = False
+    async def receive():
+        nonlocal sent
+        if not sent:
+            sent = True
+            return {"type": "http.request", "body": payload, "more_body": False}
+        return {"type": "http.disconnect"}
+    msgs = []
+    async def send(m):
+        msgs.append(m)
+    await GATEWAY(scope, receive, send)
+    raw = b"".join(m.get("body", b"") for m in msgs if m["type"] == "http.response.body")
+    return json.loads(raw)
+
+# The policy builds the request; here we await it instead of calling it
+# synchronously. Why: the graph's nodes are sync, and a sync node can't drive
+# an async ASGI app inside an already-running event loop — normally Python
+# would hand that to a worker thread, and WebAssembly has none. Against a real
+# gateway over HTTP (the path the tests cover) the call happens inside the
+# policy, in the node. Same request either way — build_request() is shared.
+GW_POLICY = GatewayPolicy(transport=None, model="mock-1")
+
+async def run_via_gateway_json(query):
+    state = run(query)                                  # tools: real graph, deterministic
+    obs = state.get("observations", [])
+    if obs:
+        body = GW_POLICY.build_request(query, obs)      # exactly what the policy would send
+        resp = await _asgi("POST", "/v1/chat/completions", body)
+        answer = (resp["choices"][0]["message"]["content"]
+                  if "choices" in resp else state["answer"])
+        cached, cost = bool(resp.get("cached")), float(resp.get("cost_usd", 0.0))
+    else:
+        answer, cached, cost, resp = state["answer"], False, 0.0, {}
+    metrics = await _asgi("GET", "/metrics", None)
+    return json.dumps({
+        "answer": answer, "steps": state["steps"],
+        "cached": cached, "cost_usd": cost, "gateway_metrics": metrics,
+    })
 `);
 
     const lgv = await py.runPythonAsync("LANGGRAPH_VERSION");
@@ -142,6 +216,41 @@ async function tryCalc() {
     : `<div class="verdict bad"><b>Rejected:</b> ${esc(r.error)}<div class="why">The tool refused it. There is no <code>eval()</code> here — names, calls and attribute access simply aren't reachable nodes.</div></div>`;
 }
 
+async function askViaGateway() {
+  const btn = $("askGw");
+  btn.disabled = true;
+  const q = $("gwq").value.trim();
+  $("gwOut").innerHTML = `<div class="thinking">agent thinking · its LLM call routing through the gateway…</div>`;
+  try {
+    const s = JSON.parse(await py.runPythonAsync(`await run_via_gateway_json(${JSON.stringify(q)})`));
+    const m = s.gateway_metrics;
+    const tools = s.steps.filter((x) => x.type === "action").map((x) => x.tool);
+    $("gwOut").innerHTML = `
+      <div class="tracebox">
+        <div class="tracehead">agent-graph ──► llm-gateway ──► mock provider</div>
+        <div class="step act"><span class="node">agent</span> ran tools: <code>${tools.join(" → ") || "none"}</code></div>
+        <div class="step obs"><span class="node">gateway</span> handled the compose call ·
+          <b class="${s.cached ? "teal" : ""}">cached=${s.cached}</b> · cost $${s.cost_usd}</div>
+        <div class="step fin"><span class="node">provider</span> replied: <span style="color:var(--fg-dim)">${esc(String(s.answer).slice(0, 150))}${String(s.answer).length > 150 ? "…" : ""}</span>
+          <div class="why">The offline mock echoes its prompt rather than synthesizing — that's what a deterministic test double does, and it's why this runs with no key. With a real key the same call returns a real answer; the gateway's behavior around it is identical.</div></div>
+      </div>
+      <div class="cards" style="margin-top:12px">
+        <div class="card"><div class="k">Gateway requests</div><div class="v">${m.requests}</div></div>
+        <div class="card"><div class="k">Cache hits</div><div class="v teal">${m.cache_hits}</div></div>
+        <div class="card"><div class="k">Hit rate</div><div class="v teal">${(m.cache_hit_rate * 100).toFixed(0)}%</div></div>
+        <div class="card"><div class="k">Tokens</div><div class="v">${m.total_tokens}</div></div>
+      </div>
+      ${m.cache_hits > 0 ? `<div class="note" style="margin-top:12px">Ask the same question again and the gateway serves the agent's LLM call from cache — the provider is never touched. That's the whole point of putting one in front of an agent.</div>` : ""}`;
+  } catch (err) {
+    $("gwOut").innerHTML = `<div class="verdict bad">Error: ${esc(err)}</div>`;
+  }
+  btn.disabled = false;
+}
+
+$("askGw").addEventListener("click", askViaGateway);
+document.querySelectorAll("[data-gwq]").forEach((b) =>
+  b.addEventListener("click", () => { $("gwq").value = b.dataset.gwq; askViaGateway(); })
+);
 $("ask").addEventListener("click", () => ask($("q").value.trim()));
 $("q").addEventListener("keydown", (e) => { if (e.key === "Enter") ask($("q").value.trim()); });
 document.querySelectorAll("[data-q]").forEach((b) =>
