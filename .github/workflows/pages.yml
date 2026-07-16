@@ -36,6 +36,9 @@ jobs:
           cp dist/*.whl site/
           WHEEL=$(cd dist && ls *.whl | head -1)
           echo "window.WHEEL_URL = './${WHEEL}';" > site/wheel.js
+          # The composition demo installs llm-gateway's own published wheel
+          # from its Pages build — same origin, its CI's artifact, not a copy.
+          echo "window.GATEWAY_WHEEL_URL = 'https://egnaro9.github.io/llm-gateway/llmgateway-0.1.0-py3-none-any.whl';" >> site/wheel.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
