@@ -3,6 +3,7 @@
 [![ci](https://github.com/egnaro9/agent-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/egnaro9/agent-graph/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 [![LangGraph](https://img.shields.io/badge/built%20with-LangGraph-1C3C3C)](https://langchain-ai.github.io/langgraph/)
+[![live demo](https://img.shields.io/badge/demo-run%20the%20agent%20in%20your%20browser-f2a53c)](https://egnaro9.github.io/agent-graph/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **A LangGraph ReAct agent with deterministic, safety-guarded tools — a multi-step tool-using agent you can actually unit-test.**
@@ -17,6 +18,10 @@ START ─► agent ──(tool call)──► tools ──► agent ──(final
 - **Multi-step tool use.** *"What is 15% of 240 and who wrote Hamlet?"* → the agent calls `calculator`, then `search`, then composes the answer — and the full trace is returned.
 - **Guardrails that matter.** A **safe calculator** (AST allow-list, so `__import__('os')` is rejected, not executed) and a **max-step budget** so a mis-behaving policy can never loop forever. Both are unit-tested.
 - **Deterministic & offline.** **17 tests, green CI, no secrets.**
+
+### ▶ [Run the agent in your browser](https://egnaro9.github.io/agent-graph/)
+
+Real LangGraph, compiled to WebAssembly via [Pyodide](https://pyodide.org) — watch the `agent ⇄ tools` loop pick its tools live, then **try to break the guardrail**: throw `__import__('os').system('ls')` at the calculator and watch it get rejected.
 
 ---
 

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A real LangGraph ReAct agent running in your browser — watch it pick tools, and try to break its guardrails.">
+<title>agent-graph — a LangGraph agent in your browser</title>
+<style>
+  :root {
+    --ink:#0e1316; --panel:#141c21; --raised:#1b252b;
+    --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.05);
+    --fg:#dae2e4; --fg-dim:#8a989e; --fg-faint:#5e6c72;
+    --amber-ink:#f2a53c; --amber-soft:rgba(242,165,60,.13); --amber-line:rgba(242,165,60,.34);
+    --teal:#48c1ac; --teal-soft:rgba(72,193,172,.12);
+    --red:#f87171; --red-soft:rgba(248,113,113,.12);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--ink); color:var(--fg); font-family:var(--sans); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased; padding:0 20px 80px;
+    background-image:linear-gradient(var(--line-2) 1px,transparent 1px),linear-gradient(90deg,var(--line-2) 1px,transparent 1px);
+    background-size:34px 34px}
+  .col{max-width:880px; margin:0 auto}
+  a{color:var(--amber-ink); text-decoration:none}
+  code{font-family:var(--mono); color:var(--amber-ink); font-size:.92em}
+
+  header{padding:56px 0 28px; border-bottom:1px solid var(--line)}
+  .eye{font-family:var(--mono); font-size:12px; letter-spacing:.28em; text-transform:uppercase; color:var(--amber-ink); display:flex; align-items:center; gap:10px}
+  .eye::before{content:""; width:26px; height:1px; background:var(--amber-line)}
+  h1{font-family:var(--mono); font-weight:600; font-size:clamp(30px,6vw,48px); line-height:1.05; letter-spacing:-.02em; margin:16px 0 0}
+  .lede{color:var(--fg-dim); max-width:62ch; margin:16px 0 0}
+  .lede b{color:var(--fg)}
+  .status{display:flex; align-items:center; gap:10px; margin-top:22px; font-family:var(--mono); font-size:13px; color:var(--fg-dim);
+    border:1px solid var(--line); background:var(--panel); padding:10px 14px; border-radius:3px}
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--amber-ink); animation:pulse 1.4s ease-in-out infinite; flex:none}
+  .status.ready .dot{background:var(--teal); animation:none}
+  .status.err .dot{background:var(--red); animation:none}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  section{padding:38px 0; border-bottom:1px solid var(--line)}
+  .label{font-family:var(--mono); font-size:11.5px; letter-spacing:.18em; text-transform:uppercase; color:var(--amber-ink)}
+  h2{font-family:var(--mono); font-weight:600; font-size:clamp(19px,3vw,24px); margin:.5rem 0 0}
+  p.intro{color:var(--fg-dim); max-width:64ch}
+
+  button{font-family:var(--mono); font-size:13px; padding:9px 14px; border-radius:2px; cursor:pointer; margin:3px 3px 3px 0;
+    border:1px solid var(--amber-line); color:var(--amber-ink); background:var(--amber-soft); transition:background .15s}
+  button:hover:not(:disabled){background:var(--amber-ink); color:var(--ink)}
+  button:disabled{opacity:.45; cursor:not-allowed}
+  button.ghost{border-color:var(--line); color:var(--fg-dim); background:transparent}
+  button.ghost:hover:not(:disabled){color:var(--fg); border-color:var(--fg-dim); background:transparent}
+  input[type=text]{width:100%; background:var(--raised); border:1px solid var(--line); border-radius:3px; color:var(--fg);
+    font-family:var(--sans); font-size:15px; padding:11px 12px; margin-bottom:8px}
+  input[type=text]:focus{outline:none; border-color:var(--amber-line)}
+  .row{display:flex; gap:8px; align-items:flex-start}
+  .row input{flex:1}
+
+  .kb{font-family:var(--mono); font-size:12px; color:var(--fg-faint); background:#0a0e11; border:1px solid var(--line);
+    border-radius:3px; padding:14px; margin:14px 0}
+  .tok{font-family:var(--mono); font-size:12px; padding:3px 8px; border-radius:2px; background:var(--teal-soft); color:var(--teal); display:inline-block; margin:2px}
+
+  .tracebox{border:1px solid var(--line); border-radius:4px; background:var(--panel); padding:16px; margin-top:16px}
+  .tracehead{font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--fg-faint); border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:12px}
+  .step{font-family:var(--mono); font-size:13px; padding:8px 0 8px 14px; border-left:2px solid var(--line); margin-left:6px}
+  .step.act{border-left-color:var(--amber-line)}
+  .step.obs{border-left-color:var(--teal); color:var(--fg-dim)}
+  .step.obs b{color:var(--teal)}
+  .step.fin,.step.guard{border-left-color:var(--fg-faint); color:var(--fg-faint)}
+  .node{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--fg-faint); border:1px solid var(--line); padding:2px 6px; border-radius:2px; margin-right:8px}
+  .node.ans{color:var(--teal); border-color:var(--teal)}
+  .why{color:var(--fg-faint); font-size:11.5px; margin-top:3px}
+  .answer{margin-top:12px; padding-top:12px; border-top:1px solid var(--line); font-size:15px}
+  .thinking{font-family:var(--mono); font-size:13px; color:var(--fg-faint); margin-top:16px}
+  .verdict{margin-top:14px; border:1px solid var(--line); border-radius:4px; padding:14px; font-family:var(--mono); font-size:13.5px}
+  .verdict.ok{border-color:var(--teal); background:var(--teal-soft)}
+  .verdict.bad{border-color:var(--red); background:var(--red-soft)}
+  .bad{color:var(--red)}
+  footer{padding:34px 0 0; color:var(--fg-faint); font-size:13.5px}
+  .note{border-left:2px solid var(--amber-line); padding-left:14px; margin-top:16px; color:var(--fg-faint); font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="col">
+
+  <header>
+    <div class="eye">Live in your browser</div>
+    <h1>agent-graph</h1>
+    <p class="lede">A <b>real LangGraph ReAct agent</b> — compiled and executing in this tab, in WebAssembly. Not a recording, not a JS reimplementation: the same <code>StateGraph</code> that runs in CI, picking tools and looping until it can answer.</p>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Booting Python…</span></div>
+  </header>
+
+  <section>
+    <div class="label">// Part 1</div>
+    <h2>Watch it use tools</h2>
+    <p class="intro">Ask something. The agent decides which tool to call, sees the result, and decides again — looping <code>agent ⇄ tools</code> until it's done. Every step below is the real trace the graph emitted.</p>
+
+    <div class="kb" id="kb">Loading…</div>
+
+    <div class="row">
+      <input type="text" id="q" value="What is 15% of 240 and who wrote Hamlet?" aria-label="Ask the agent">
+      <button id="ask" disabled>Ask</button>
+    </div>
+    <div>
+      <button class="ghost" data-q="What is 12 * 8?" disabled>math only</button>
+      <button class="ghost" data-q="Who wrote Hamlet?" disabled>search only</button>
+      <button class="ghost" data-q="What is 15% of 240 and who wrote Hamlet?" disabled>two tools</button>
+      <button class="ghost" data-q="What is the capital of France?" disabled>capital of France</button>
+      <button class="ghost" data-q="hello there" disabled>no tool needed</button>
+    </div>
+    <div id="trace"></div>
+  </section>
+
+  <section>
+    <div class="label">// Part 2</div>
+    <h2>Try to break the guardrail</h2>
+    <p class="intro">The <code>calculator</code> tool is the agent's most dangerous surface — it takes a string and evaluates it. A naive implementation reaches for <code>eval()</code>, and then anything the agent can be talked into typing becomes code execution. This one walks a parsed AST and permits only arithmetic nodes, so there's nothing to escape into. Try it.</p>
+
+    <div class="row">
+      <input type="text" id="expr" value="2 + 3 * 4" aria-label="Expression">
+      <button id="runCalc" disabled>Evaluate</button>
+    </div>
+    <div>
+      <button class="ghost" data-expr="(2 + 3) * 4" disabled>parens</button>
+      <button class="ghost" data-expr="2 ** 64" disabled>big power</button>
+      <button class="ghost" data-expr="__import__('os').system('ls')" disabled>⚠ import os</button>
+      <button class="ghost" data-expr="open('/etc/passwd').read()" disabled>⚠ read a file</button>
+      <button class="ghost" data-expr="1 +" disabled>malformed</button>
+    </div>
+    <div id="calcOut"></div>
+
+    <div class="note">The other guardrail is a <b>step budget</b>: the agent node forces a finish once it hits <code>max_steps</code>, so a policy that never decides to stop still terminates. Both are unit-tested — a broken policy that loops forever is an actual test case.</div>
+  </section>
+
+  <footer>
+    <p>Running <a href="https://github.com/egnaro9/agent-graph">agent-graph</a> on real <a href="https://langchain-ai.github.io/langgraph/">LangGraph</a> via <a href="https://pyodide.org">Pyodide</a>. The wheel is built from <code>main</code> by CI.</p>
+    <p><b>One honest caveat:</b> LangGraph pulls <code>ormsgpack</code> and <code>websockets</code>, which have no WebAssembly builds. This agent uses neither — no checkpointer, no remote client — so they're stubbed here. The stubs raise <code>NotImplementedError</code> instead of faking behavior, so an unused path can't silently pretend to work. The graph, the tools and the guardrails are all genuinely running.</p>
+    <p>Built by <a href="https://egnaro9.github.io">Erik Hill</a>.</p>
+  </footer>
+
+</div>
+<script src="https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.js"></script>
+<script src="./wheel.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
