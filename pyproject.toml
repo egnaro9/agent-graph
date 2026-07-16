@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentgraph"
+version = "0.1.0"
+description = "A LangGraph ReAct agent with deterministic, safety-guarded tools — a multi-step tool-using agent you can unit-test."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Erik Hill", email = "erik.hill0987@gmail.com" }]
+keywords = ["langgraph", "langchain", "agent", "react", "tool-calling", "llm"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["langgraph>=0.2"]
+
+[project.optional-dependencies]
+openai = ["openai>=1.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+agentgraph = "agentgraph.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/egnaro9/agent-graph"
+
+[tool.setuptools]
+packages = ["agentgraph"]

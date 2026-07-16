@@ -1,0 +1,5 @@
+langgraph>=0.2
+# dev/test:
+pytest>=7
+# optional real model policy (uncomment + set OPENAI_API_KEY):
+# openai>=1.0
