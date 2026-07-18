@@ -16,7 +16,7 @@ START ─► agent ──(tool call)──► tools ──► agent ──(final
 
 - **Real LangGraph.** `StateGraph` with append-only `steps`/`observations` reducers, a conditional `agent → tools → agent` loop, and a compiled app you `invoke`.
 - **Multi-step tool use.** *"What is 15% of 240 and who wrote Hamlet?"* → the agent calls `calculator`, then `search`, then composes the answer — and the full trace is returned.
-- **Guardrails that matter.** A **safe calculator** (AST allow-list, so `__import__('os')` is rejected, not executed) and a **max-step budget** so a mis-behaving policy can never loop forever. Both are unit-tested.
+- **Guardrails that matter — mapped to [OWASP LLM06 (Excessive Agency)](https://genai.owasp.org/llmrisk/llm06-2025-excessive-agency/).** A **safe calculator** (AST allow-list, so `__import__('os')` is rejected, not executed) and a **max-step budget** so a mis-behaving policy can never loop forever — limited tool functionality and limited autonomy, the two mitigations OWASP names. Both are unit-tested.
 - **Deterministic & offline.** **17 tests, green CI, no secrets.**
 
 ### ▶ [Run the agent in your browser](https://egnaro9.github.io/agent-graph/)
@@ -60,21 +60,25 @@ assert "96" in state["answer"]
 assert [s for s in state["steps"] if s["type"] == "action"][0]["tool"] == "calculator"
 ```
 
-## The two guardrails, tested
+## Guardrails, mapped to the OWASP LLM Top 10
 
-**Safe calculator** — the tool never runs arbitrary code:
+Both guardrails are concrete mitigations for **[LLM06: Excessive Agency](https://genai.owasp.org/llmrisk/llm06-2025-excessive-agency/)** — the risk that an LLM, given a tool, does more with it than intended. The mitigation OWASP names is *limit tool functionality and limit autonomy*; that's exactly these two.
+
+**Safe calculator — minimal tool functionality (LLM06), and no prompt-injection → RCE (LLM01).**
 ```python
 from agentgraph import calculator, ToolError
-calculator("2 + 3 * 4")          # "14"
-calculator("__import__('os')")    # raises ToolError — names/calls are not allowed
+calculator("2 + 3 * 4")           # "14"
+calculator("__import__('os')")     # raises ToolError — names/calls are not allowed
 ```
-It walks a parsed `ast` and permits only arithmetic nodes ([`tools.py`](agentgraph/tools.py)).
+The naive version of this tool is `eval(expression)` — a remote-code-execution hole one crafted model output away. Instead it parses to an `ast` and walks an **allow-list of arithmetic nodes only** ([`tools.py`](agentgraph/tools.py)); a function call, attribute access, or name is rejected before anything executes. The tool can do arithmetic and *nothing else*, so a manipulated or injected instruction can't escalate it.
 
-**Step budget** — a policy that never finishes still terminates:
+**Step budget — bounded autonomy (LLM06).**
 ```python
 build_graph(policy=AlwaysActsPolicy(), max_steps=3)   # the agent node forces a finish at the budget
 ```
-See [`test_graph.py::test_max_steps_guard_prevents_infinite_loop`](tests/test_graph.py).
+An agent that can loop forever is an agent that can exhaust cost and resources on a single request. A hard step budget caps the autonomy of *any* policy, well-behaved or not. See [`test_graph.py::test_max_steps_guard_prevents_infinite_loop`](tests/test_graph.py).
+
+Both are unit-tested, so the mitigations can't silently regress — the point of a guardrail is that it stays a guardrail.
 
 ## Composing with rag-eval-lab
 
