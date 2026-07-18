@@ -17,7 +17,7 @@ START ─► agent ──(tool call)──► tools ──► agent ──(final
 - **Real LangGraph.** `StateGraph` with append-only `steps`/`observations` reducers, a conditional `agent → tools → agent` loop, and a compiled app you `invoke`.
 - **Multi-step tool use.** *"What is 15% of 240 and who wrote Hamlet?"* → the agent calls `calculator`, then `search`, then composes the answer — and the full trace is returned.
 - **Guardrails that matter — mapped to [OWASP LLM06 (Excessive Agency)](https://genai.owasp.org/llmrisk/llm06-2025-excessive-agency/).** A **safe calculator** (AST allow-list, so `__import__('os')` is rejected, not executed) and a **max-step budget** so a mis-behaving policy can never loop forever — limited tool functionality and limited autonomy, the two mitigations OWASP names. Both are unit-tested.
-- **Deterministic & offline.** **17 tests, green CI, no secrets.**
+- **Deterministic & offline.** **36 tests, green CI, no secrets.**
 
 ### ▶ [Run the agent in your browser](https://egnaro9.github.io/agent-graph/)
 
@@ -133,7 +133,7 @@ agentgraph/
   policy.py   MockPolicy (deterministic) · LLMPolicy (optional, function-calling)
   tools.py    calculator (safe AST eval) · search (KB) · wordcount · run_tool
   cli.py      `run "<query>"` · `demo`
-tests/        17 tests — tools, safety, multi-step traces, the step-budget guard
+tests/        36 tests — tools, safety, multi-step traces, the step-budget guard
 ```
 
 ## Design notes
