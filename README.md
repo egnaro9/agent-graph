@@ -1,12 +1,12 @@
 # agent-graph
 
+**A LangGraph ReAct agent with deterministic, safety-guarded tools — a multi-step tool-using agent you can actually unit-test.**
+
 [![ci](https://github.com/egnaro9/agent-graph/actions/workflows/ci.yml/badge.svg)](https://github.com/egnaro9/agent-graph/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 [![LangGraph](https://img.shields.io/badge/built%20with-LangGraph-1C3C3C)](https://langchain-ai.github.io/langgraph/)
 [![live demo](https://img.shields.io/badge/demo-run%20the%20agent%20in%20your%20browser-f2a53c)](https://egnaro9.github.io/agent-graph/)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-
-**A LangGraph ReAct agent with deterministic, safety-guarded tools — a multi-step tool-using agent you can actually unit-test.**
 
 Agents are hard to test because the model is nondeterministic. This repo separates the two concerns: the **graph** (the orchestration — nodes, conditional edges, state, the tool loop, the step-budget guard) is real LangGraph and fully deterministic; the **policy** (the "which tool next" brain) is a swappable interface. A rule-based `MockPolicy` makes the whole agent reproducible and CI-testable with no API key; an `LLMPolicy` drops a real function-calling model into the exact same graph.
 
