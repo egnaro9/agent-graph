@@ -46,7 +46,14 @@ def calculator(expression: str) -> str:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as exc:
         raise ToolError(f"invalid expression: {expression!r}") from exc
-    value = _eval(tree)
+    # Arithmetic that is well-formed but undefined — 4/0, 0%0 — reaches the
+    # operator and raises ArithmeticError, which the graph does not catch
+    # because it only handles ToolError. That crashed the whole run on a query
+    # a user can type by accident, so it is a tool error like any other.
+    try:
+        value = _eval(tree)
+    except ArithmeticError as exc:
+        raise ToolError(f"undefined arithmetic in {expression!r}: {exc}") from exc
     if isinstance(value, float) and value.is_integer():
         value = int(value)
     return str(value)
