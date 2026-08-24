@@ -36,9 +36,23 @@ jobs:
           cp dist/*.whl site/
           WHEEL=$(cd dist && ls *.whl | head -1)
           echo "window.WHEEL_URL = './${WHEEL}';" > site/wheel.js
-          # The composition demo installs llm-gateway's own published wheel
-          # from its Pages build — same origin, its CI's artifact, not a copy.
-          echo "window.GATEWAY_WHEEL_URL = 'https://egnaro9.github.io/llm-gateway/llmgateway-0.1.0-py3-none-any.whl';" >> site/wheel.js
+          # The composition demo installs llm-gateway's own published wheel from
+          # its Pages build: its CI's artifact, not a copy. Two things this line
+          # used to get wrong, both of which killed the demo at boot.
+          #
+          # Host. It pointed at egnaro9.github.io, which 301s to erikhill.dev and
+          # serves that redirect WITHOUT Access-Control-Allow-Origin, so the
+          # cross-origin fetch died on the hop. It is not same-origin, whatever the
+          # old comment said. erikhill.dev answers 200 with ACAO *, and is one hop
+          # shorter.
+          #
+          # Version. It hardcoded 0.1.0. llm-gateway publishes a wheel.js naming the
+          # exact wheel its CI just built, so read that instead of guessing; a pinned
+          # filename goes stale the moment that project releases.
+          GW=$(curl -fsS https://erikhill.dev/llm-gateway/wheel.js \
+               | sed -n "s/.*window.WHEEL_URL *= *'\.\/\([^']*\)'.*/\1/p")
+          test -n "$GW"   # fail loudly rather than deploy a demo that cannot boot
+          echo "window.GATEWAY_WHEEL_URL = 'https://erikhill.dev/llm-gateway/${GW}';" >> site/wheel.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
