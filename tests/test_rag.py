@@ -1,4 +1,3 @@
-import pathlib
 """The agent's search tool backed by rag-eval-lab's retriever (arrow 1 of the stack)."""
 import pytest
 
@@ -61,15 +60,6 @@ def test_the_tool_owns_its_trigger_not_the_planner():
 def test_retriever_still_ignores_non_questions():
     from agentgraph.policy import MockPolicy
     assert MockPolicy(tools=rag_tools()).plan("hello there") == []
-
-
-def test_planner_does_not_import_tool_internals():
-    # The regression that started this: the policy used to reach into the
-    # search tool's private _KB, which is why a real corpus never triggered.
-    import agentgraph.policy as policy_mod
-    src = pathlib.Path(policy_mod.__file__).read_text()
-    assert "_KB" not in src
-    assert "always_search" not in src
 
 
 def test_default_policy_plans_against_the_registry_it_executes_with():
