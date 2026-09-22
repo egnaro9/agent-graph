@@ -16,7 +16,7 @@ START ─► agent ──(tool call)──► tools ──► agent ──(final
 
 - **Real LangGraph.** `StateGraph` with append-only `steps`/`observations` reducers, a conditional `agent → tools → agent` loop, and a compiled app you `invoke`.
 - **Multi-step tool use.** *"What is 15% of 240 and who wrote Hamlet?"* → the agent calls `calculator`, then `search`, then composes the answer — and the full trace is returned.
-- **Guardrails that matter — mapped to [OWASP LLM06 (Excessive Agency)](https://genai.owasp.org/llmrisk/llm06-2025-excessive-agency/).** A **safe calculator** (AST allow-list, so `__import__('os')` is rejected, not executed) and a **max-step budget** so a mis-behaving policy can never loop forever — limited tool functionality and limited autonomy, the two mitigations OWASP names. Both are unit-tested.
+- **Guardrails that matter — mapped to [OWASP LLM06 (Excessive Agency)](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/).** A **safe calculator** (AST allow-list, so `__import__('os')` is rejected, not executed) and a **max-step budget** so a mis-behaving policy can never loop forever — limited tool functionality and limited autonomy, the two mitigations OWASP names. Both are unit-tested.
 - **Deterministic & offline.** **30 tests, green CI, no secrets.**
 
 ### ▶ [Run the agent in your browser](https://egnaro9.github.io/agent-graph/)
@@ -62,7 +62,7 @@ assert [s for s in state["steps"] if s["type"] == "action"][0]["tool"] == "calcu
 
 ## Guardrails, mapped to the OWASP LLM Top 10
 
-Both guardrails are concrete mitigations for **[LLM06: Excessive Agency](https://genai.owasp.org/llmrisk/llm06-2025-excessive-agency/)** — the risk that an LLM, given a tool, does more with it than intended. The mitigation OWASP names is *limit tool functionality and limit autonomy*; that's exactly these two.
+Both guardrails are concrete mitigations for **[LLM06: Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)** — the risk that an LLM, given a tool, does more with it than intended. The mitigation OWASP names is *limit tool functionality and limit autonomy*; that's exactly these two.
 
 **Safe calculator — minimal tool functionality (LLM06), and no prompt-injection → RCE (LLM01).**
 ```python
