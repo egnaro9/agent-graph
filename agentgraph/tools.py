@@ -8,24 +8,40 @@ a small but real example of guarding an agent's tool surface.
 from __future__ import annotations
 
 import ast
+import math
 import operator as op
 import re
 from typing import Callable, Dict, List, Protocol
+
+class ToolError(RuntimeError):
+    """Raised for bad tool input — caught by the graph and recorded as an observation."""
+
+
+# An allow-list stops `__import__('os')`; it does nothing about `9 ** 9 ** 9`,
+# which is pure arithmetic whose result is about 369 million digits. CPython
+# computes it eagerly, so the tool hangs instead of answering, and a hung tool
+# stalls the whole graph. Bound the width of the result before computing it.
+_MAX_POW_DIGITS = 1_000
+
+
+def _guarded_pow(base: float, exponent: float) -> float:
+    if abs(base) > 1 and exponent > 0 and exponent * math.log10(abs(base)) > _MAX_POW_DIGITS:
+        raise ToolError(
+            f"refusing {base}**{exponent}: the result would exceed "
+            f"{_MAX_POW_DIGITS} digits")
+    return op.pow(base, exponent)
+
 
 _BINOPS = {
     ast.Add: op.add,
     ast.Sub: op.sub,
     ast.Mult: op.mul,
     ast.Div: op.truediv,
-    ast.Pow: op.pow,
+    ast.Pow: _guarded_pow,
     ast.Mod: op.mod,
     ast.FloorDiv: op.floordiv,
 }
 _UNARY = {ast.UAdd: op.pos, ast.USub: op.neg}
-
-
-class ToolError(RuntimeError):
-    """Raised for bad tool input — caught by the graph and recorded as an observation."""
 
 
 def _eval(node: ast.AST) -> float:

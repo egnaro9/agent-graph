@@ -61,3 +61,25 @@ def test_wordcount():
 def test_run_tool_unknown():
     with pytest.raises(ToolError):
         run_tool("nope", "x")
+
+
+def test_calculator_refuses_an_expression_too_wide_to_compute():
+    """`9 ** 9 ** 9` is pure arithmetic, so the allow-list passes it happily.
+
+    Its result is about 369 million digits, so the tool used to hang rather than
+    answer, and a hung tool stalls the entire graph: no observation, no error,
+    no completion. The timing assertion is the point. Raising is easy; refusing
+    before starting the multiplication is the property under test.
+    """
+    import time
+
+    start = time.monotonic()
+    with pytest.raises(ToolError, match="digits"):
+        calculator("9**9**9")
+    assert time.monotonic() - start < 1.0
+
+
+def test_calculator_still_does_ordinary_exponentiation():
+    assert calculator("2**10") == "1024"
+    assert calculator("(-2)**3") == "-8"
+    assert calculator("2**0.5").startswith("1.414")
