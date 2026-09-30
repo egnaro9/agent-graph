@@ -62,9 +62,9 @@ assert [s for s in state["steps"] if s["type"] == "action"][0]["tool"] == "calcu
 
 ## Guardrails, mapped to the OWASP LLM Top 10
 
-Both guardrails are concrete mitigations for **[LLM06: Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)** — the risk that an LLM, given a tool, does more with it than intended. The mitigation OWASP names is *limit tool functionality and limit autonomy*; that's exactly these two.
+Both guardrails sit under **[LLM06: Excessive Agency](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)** — the risk that an LLM, given a tool, does more with it than intended. OWASP's verbatim mitigation heading is *"Minimize extension functionality"*, which is the calculator exactly. Each guardrail also touches a second category, named below rather than folded into this one, because a mapping that stretches one category over everything stops being a mapping.
 
-**Safe calculator — minimal tool functionality (LLM06), and no prompt-injection → RCE (LLM01).**
+**Safe calculator — minimal tool functionality ([LLM06](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)); the sink it closes is [LLM05: Improper Output Handling](https://genai.owasp.org/llmrisk/llm052025-improper-output-handling/), reached via [LLM01: Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/).**
 ```python
 from agentgraph import calculator, ToolError
 calculator("2 + 3 * 4")           # "14"
@@ -72,11 +72,15 @@ calculator("__import__('os')")     # raises ToolError — names/calls are not al
 ```
 The naive version of this tool is `eval(expression)` — a remote-code-execution hole one crafted model output away. Instead it parses to an `ast` and walks an **allow-list of arithmetic nodes only** ([`tools.py`](agentgraph/tools.py)); a function call, attribute access, or name is rejected before anything executes. The tool can do arithmetic and *nothing else*, so a manipulated or injected instruction can't escalate it.
 
-**Step budget — bounded autonomy (LLM06).**
+Two categories, because the chain has two ends and citing one implies the other is handled. LLM01 is the entry point and its own page lists *"Executing arbitrary commands in connected systems"* among prompt-injection consequences, so it is not the wrong citation. But LLM05 is the category of the thing actually hardened here: model output reaching `eval` is the worked example on the LLM05 page. Bounding the *cost* of an allow-listed expression is a third job again, and it lives with the step budget below.
+
+**Step budget — bounded autonomy ([LLM06](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)), and the reason it exists is [LLM10: Unbounded Consumption](https://genai.owasp.org/llmrisk/llm102025-unbounded-consumption/).**
 ```python
 build_graph(policy=AlwaysActsPolicy(), max_steps=3)   # the agent node forces a finish at the budget
 ```
 An agent that can loop forever is an agent that can exhaust cost and resources on a single request. A hard step budget caps the autonomy of *any* policy, well-behaved or not. See [`test_graph.py::test_max_steps_guard_prevents_infinite_loop`](tests/test_graph.py).
+
+The rationale in that sentence is cost and resource exhaustion, which is LLM10 by definition, so LLM10 is now cited beside LLM06 rather than left implied. Both apply: capping steps limits autonomy, and the harm it prevents is unbounded consumption. This is the same distinction the calculator makes above, where rejecting injection and bounding the cost of an allow-listed expression are different jobs.
 
 Both are unit-tested, so the mitigations can't silently regress — the point of a guardrail is that it stays a guardrail.
 
