@@ -100,3 +100,58 @@ def test_end_to_end_through_the_graph():
     assert state["answer"] == "36, and Shakespeare wrote Hamlet."
     tools_used = [s["tool"] for s in state["steps"] if s["type"] == "action"]
     assert tools_used == ["calculator", "search"]   # real tools still ran
+
+
+# ---------------------------------------------------------------------------
+# Monitoring surfaces that could not report the negative case.
+#
+# A mutation audit hardcoded `cached` to True and `cost_usd` to 0.0 and all 42 tests stayed
+# green. The single assertion for each is made against a fake configured to return exactly
+# that value, so the expected value, the degenerate constant and the property's own `.get`
+# default are three indistinguishable things. The fake's DEFAULT cost is 0.0002, so a
+# non-degenerate value was available and the one assertion overrode it to 0.0.
+
+_OBS = [{"tool": "search", "args": "a", "result": "r"}]
+
+
+def test_a_nonzero_cost_is_reported_as_itself():
+    """The module docstring sells per-model cost accounting as a reason the gateway sits in
+    front of the agent. A cost hardcoded to 0.0 reports every run as free."""
+    p = GatewayPolicy(transport=fake_gateway(cost=0.0042))
+    p.compose("q", _OBS)
+    assert p.cost_usd == 0.0042
+
+
+def test_a_cache_miss_is_reported_as_a_miss():
+    """Only `cached is True` was ever asserted. Hardcoded True reports every run as a cache
+    hit, including a failed one."""
+    p = GatewayPolicy(transport=fake_gateway(cached=False))
+    p.compose("q", _OBS)
+    assert p.cached is False
+
+
+def test_a_cache_hit_is_still_reported_as_a_hit():
+    p = GatewayPolicy(transport=fake_gateway(cached=True))
+    p.compose("q", _OBS)
+    assert p.cached is True
+
+
+def test_every_tool_observation_reaches_the_model():
+    """`observations` could be truncated to `observations[:1]` invisibly: the one test that
+    inspects the request body passes a single observation, and the only multi-observation
+    path asserts the fake's canned answer without reading the body. The prompt instructs the
+    model to answer using only those results, so withholding two of three is a silently
+    wrong answer rather than a formatting difference.
+    """
+    sent = []
+    p = GatewayPolicy(transport=fake_gateway(record=sent))
+    obs = [
+        {"tool": "calculator", "args": "2+2", "result": "4"},
+        {"tool": "search", "args": "hamlet", "result": "Shakespeare wrote Hamlet."},
+        {"tool": "wordcount", "args": "a b c", "result": "3"},
+    ]
+    p.compose("q", obs)
+    content = sent[0]["body"]["messages"][0]["content"]
+    for o in obs:
+        assert f"{o['tool']}({o['args']}) = {o['result']}" in content, (
+            f"observation {o['tool']} never reached the model")

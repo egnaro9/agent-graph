@@ -25,6 +25,9 @@ jobs:
       - name: Run tests
         run: pytest -q
       - name: Smoke — run the agent on a multi-step query
+        # pipefail, because the default shell is `bash -e {0}` with no pipefail: the
+        # pipeline's status would be tee's, so a CLI exiting non-zero left this step GREEN.
+        shell: bash -eo pipefail {0}
         run: |
           python -m agentgraph.cli run "What is 15% of 240 and who wrote Hamlet?" | tee run.out
           grep -q "36" run.out
