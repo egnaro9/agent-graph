@@ -31,6 +31,8 @@ jobs:
           python -m build --wheel
       - name: Assemble the demo site
         run: |
+          # pipefail: `ls *.whl | head -1` below reports head's status, not ls's.
+          set -o pipefail
           mkdir -p site
           cp demo/index.html demo/app.js site/
           cp dist/*.whl site/
